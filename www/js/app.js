@@ -9,7 +9,7 @@ const app = {
     failedAttempts: 0,
     lastActiveTime: Date.now(),
     isNetworkOffline: false,
-    verifyPurpose: '', // 'settings' yoki bo'sh
+    currentUrl: '',
 
     init: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
@@ -19,18 +19,13 @@ const app = {
     },
 
     onDeviceReady: function() {
-        console.log('Device ready');
         this.storedPinHash = localStorage.getItem('pin_hash');
         this.setupNumpads();
-        this.checkNetwork();
-
         if (!this.storedPinHash) {
             this.showScreen('screen-set-pin');
         } else {
             this.showScreen('screen-login');
-            document.getElementById('settings-trigger').classList.remove('hidden');
         }
-        
         document.addEventListener("offline", () => {
             this.isNetworkOffline = true;
             if (this.iabRef) this.iabRef.close();
@@ -38,7 +33,6 @@ const app = {
         }, false);
     },
 
-    // --- CUSTOM MESSAGES (Replace Alert) ---
     showMessage: function(title, text, icon = '✔️') {
         document.getElementById('info-title').innerText = title;
         document.getElementById('info-text').innerText = text;
@@ -46,11 +40,8 @@ const app = {
         document.getElementById('modal-info').classList.remove('hidden');
     },
 
-    closeInfoModal: function() {
-        document.getElementById('modal-info').classList.add('hidden');
-    },
+    closeInfoModal: function() { document.getElementById('modal-info').classList.add('hidden'); },
 
-    // --- NUMPAD LOGIC ---
     setupNumpads: function() {
         const create = (id, type) => {
             const container = document.getElementById(id);
@@ -78,15 +69,9 @@ const app = {
 
     handleInput: async function(val, type) {
         if (this.lockoutTimer > 0 && type === 'login') return;
-
-        if (val === 'del') {
-            this.currentPin = this.currentPin.slice(0, -1);
-        } else if (this.currentPin.length < 4) {
-            this.currentPin += val;
-        }
-
+        if (val === 'del') this.currentPin = this.currentPin.slice(0, -1);
+        else if (this.currentPin.length < 4) this.currentPin += val;
         this.updateDots(type);
-
         if (this.currentPin.length === 4) {
             if (type === 'set') await this.handleSetPin();
             else if (type === 'verify') await this.handleVerifyPin();
@@ -164,7 +149,6 @@ const app = {
         }, 1000);
     },
 
-    // --- APP FLOW ---
     showScreen: function(id) {
         document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
         document.getElementById(id).classList.remove('hidden');
@@ -173,32 +157,38 @@ const app = {
     },
 
     openWebApp: function() {
-        if (this.isNetworkOffline) { this.showScreen('screen-no-internet'); return; }
-        document.getElementById('settings-trigger').classList.remove('hidden');
-        const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=yes';
+        const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=no'; // hardwareback=no so we can handle it manually
         this.iabRef = cordova.InAppBrowser.open(this.url, '_blank', opt);
-        this.iabRef.addEventListener('loadstop', () => this.injectAll());
-        this.iabRef.addEventListener('loaderror', () => { this.iabRef.close(); this.showScreen('screen-no-internet'); });
-        this.iabRef.addEventListener('exit', () => { this.iabRef = null; if (!this.isNetworkOffline) this.showScreen('screen-login'); });
+        
+        this.iabRef.addEventListener('loadstop', (e) => {
+            this.currentUrl = e.url;
+            this.injectAll();
+        });
+        this.iabRef.addEventListener('exit', () => {
+            this.iabRef = null;
+            this.showScreen('screen-login');
+        });
     },
 
     injectAll: function() {
-        // Aggressive Pull-To-Refresh Injection
+        // Ultimate Pull-To-Refresh with Arrow Animation
         const ptrScript = `
             (function() {
                 if (window.ptrInitialized) return;
                 window.ptrInitialized = true;
-                let startY = 0, diff = 0, isRefreshing = false;
-                const threshold = 160;
+                let startY = 0, diff = 0, isRefreshing = false, isDragging = false;
+                const threshold = 140;
+
                 const ptr = document.createElement('div');
-                ptr.style.cssText = 'position:fixed;top:-80px;left:5%;width:90%;height:70px;background:rgba(255,255,255,0.1);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.2);border-radius:20px;z-index:2147483647;display:flex;align-items:center;justify-content:center;color:white;font-family:sans-serif;font-weight:bold;transition:top 0.2s cubic-bezier(0,0,0.2,1);box-shadow:0 10px 30px rgba(0,0,0,0.5);';
-                ptr.innerHTML = '⬇️ Yangilash uchun torting';
+                ptr.id = 'custom-ptr';
+                ptr.style.cssText = 'position:fixed;top:-100px;left:50%;transform:translateX(-50%);width:60px;height:60px;background:rgba(255,255,255,0.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.3);border-radius:50%;z-index:2147483647;display:flex;align-items:center;justify-content:center;transition:top 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.2s;';
+                ptr.innerHTML = '<svg id="ptr-svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.1s linear;"><path d="M7 13l5 5 5-5M12 18V6"/></svg>';
                 document.body.appendChild(ptr);
 
                 const getScroll = () => window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
 
                 window.addEventListener('touchstart', (e) => {
-                    if (getScroll() <= 5) startY = e.touches[0].pageY;
+                    if (getScroll() <= 5) { startY = e.touches[0].pageY; isDragging = true; }
                     else startY = -1;
                 }, {passive: true});
 
@@ -206,84 +196,79 @@ const app = {
                     if (startY === -1 || isRefreshing) return;
                     diff = e.touches[0].pageY - startY;
                     if (diff > 0 && getScroll() <= 5) {
-                        let top = Math.min(diff / 2.5 - 80, 15);
+                        let top = Math.min(diff / 2.2 - 80, 40);
                         ptr.style.top = top + 'px';
-                        ptr.innerHTML = (diff > threshold) ? '🔄 Yangilash uchun qo\\u027vorni yuboring' : '⬇️ Yangilash uchun torting';
+                        let rotation = Math.min(diff * 2, 180);
+                        document.getElementById('ptr-svg').style.transform = 'rotate(' + (diff > threshold ? 180 : rotation) + 'deg)';
+                        ptr.style.background = diff > threshold ? 'rgba(0,123,255,0.6)' : 'rgba(255,255,255,0.15)';
                     }
                 }, {passive: true});
 
                 window.addEventListener('touchend', () => {
                     if (startY === -1 || isRefreshing) return;
-                    if (parseInt(ptr.style.top) > 0) {
-                        isRefreshing = true; ptr.style.top = '15px'; ptr.innerHTML = '⌛ Yangilanmoqda...';
+                    if (parseInt(ptr.style.top) > 20 && diff > threshold) {
+                        isRefreshing = true; ptr.style.top = '40px';
+                        ptr.innerHTML = '<div class="ptr-loader"></div>'; // Simple loader
+                        const s = document.createElement('style');
+                        s.innerHTML = '.ptr-loader{width:20px;height:20px;border:3px solid #fff;border-top-color:transparent;border-radius:50%;animation:ptr-rot 0.6s linear infinite;} @keyframes ptr-rot{to{transform:rotate(360deg)}}';
+                        document.head.appendChild(s);
                         location.reload();
-                    } else { ptr.style.top = '-80px'; }
-                    startY = -1;
+                    } else { ptr.style.top = '-100px'; }
+                    startY = -1; isDragging = false;
                 });
-                
-                // Extra: Auto reload on stale pages
-                window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
+                // History refresh handler
+                window.onpopstate = function() { location.reload(); };
             })();
         `;
         this.iabRef.executeScript({ code: ptrScript });
     },
 
-    // --- SETTINGS ACCESS ---
-    requestSettingsAccess: function() {
-        this.currentPin = '';
-        this.updateDots('verify');
-        document.getElementById('modal-verify').classList.remove('hidden');
+    onBackKeyDown: function() {
+        // 1. PIN Screen exit
+        if (!document.getElementById('screen-login').classList.contains('hidden') || 
+            !document.getElementById('screen-set-pin').classList.contains('hidden')) {
+            navigator.app.exitApp();
+            return;
+        }
+
+        // 2. IAB handling
+        if (this.iabRef) {
+            // Check dashboard
+            if (this.currentUrl.includes('dashboard.php')) {
+                this.iabRef.close();
+                navigator.app.exitApp();
+                return;
+            }
+
+            // Normal history back with refresh
+            this.iabRef.executeScript({ code: "if(window.history.length > 1) { window.history.back(); setTimeout(function(){location.reload();}, 100); } else { 'EXIT_IAB' }" }, (res) => {
+                if (res && res[0] === 'EXIT_IAB') {
+                    this.iabRef.close();
+                }
+            });
+            return;
+        }
+
+        // 3. Modals
+        if (!document.getElementById('modal-settings').classList.contains('hidden')) this.hideSettings();
+        else if (!document.getElementById('modal-verify').classList.contains('hidden')) this.closeVerifyModal();
+        else navigator.app.exitApp();
     },
 
-    closeVerifyModal: function() {
-        document.getElementById('modal-verify').classList.add('hidden');
-    },
-
-    showSettingsModal: function() {
-        document.getElementById('modal-settings').classList.remove('hidden');
-        document.getElementById('select-autolock').value = localStorage.getItem('autolock_time') || '0';
-    },
-
-    hideSettings: function() {
-        document.getElementById('modal-settings').classList.add('hidden');
-    },
-
+    requestSettingsAccess: function() { this.currentPin = ''; this.updateDots('verify'); document.getElementById('modal-verify').classList.remove('hidden'); },
+    closeVerifyModal: function() { document.getElementById('modal-verify').classList.add('hidden'); },
+    showSettingsModal: function() { document.getElementById('modal-settings').classList.remove('hidden'); document.getElementById('select-autolock').value = localStorage.getItem('autolock_time') || '0'; },
+    hideSettings: function() { document.getElementById('modal-settings').classList.add('hidden'); },
     updateAutoLock: function() { localStorage.setItem('autolock_time', document.getElementById('select-autolock').value); },
-
-    changePinInitiate: function() {
-        this.hideSettings(); this.isChangingPin = true; this.currentPin = ''; this.tempPin = '';
-        document.getElementById('set-pin-title').innerText = 'Yangi PIN o\'rnating';
-        document.getElementById('btn-cancel-set').classList.remove('hidden');
-        this.showScreen('screen-set-pin');
-    },
-
+    changePinInitiate: function() { this.hideSettings(); this.isChangingPin = true; this.currentPin = ''; this.tempPin = ''; document.getElementById('set-pin-title').innerText = 'Yangi PIN o\'rnating'; document.getElementById('btn-cancel-set').classList.remove('hidden'); this.showScreen('screen-set-pin'); },
     cancelPinSet: function() { this.isChangingPin = false; this.currentPin = ''; this.showScreen('screen-login'); },
-
-    clearCache: function() {
-        if (confirm('Barcha kesh va ma\'lumotlar o\'chirilsinmi?')) { localStorage.clear(); location.reload(); }
-    },
-
-    checkNetwork: async function() {
-        if (navigator.connection.type === Connection.NONE) { this.isNetworkOffline = true; this.showScreen('screen-no-internet'); return false; }
-        return true;
-    },
-
-    retryConnection: async function() { if (await this.checkNetwork()) this.showScreen(this.storedPinHash ? 'screen-login' : 'screen-set-pin'); },
-
+    clearCache: function() { if (confirm('Barcha kesh va ma\'lumotlar o\'chirilsinmi?')) { localStorage.clear(); location.reload(); } },
     onPause: function() { if (this.iabRef) this.iabRef.hide(); this.lastActiveTime = Date.now(); },
-
     onResume: function() {
         const auto = parseInt(localStorage.getItem('autolock_time') || '0');
-        if (auto > 0 && (Date.now() - this.lastActiveTime) / 60000 >= auto) {
-            if (this.iabRef) this.iabRef.close();
-            this.showScreen('screen-login');
-        } else if (this.iabRef) this.iabRef.show();
-    },
-
-    onBackKeyDown: function() {
-        if (this.iabRef) return;
-        if (!document.getElementById('modal-settings').classList.contains('hidden')) this.hideSettings();
-        else navigator.app.exitApp();
+        if (auto > 0 && (Date.now() - this.lastActiveTime) / 60000 >= auto) { if (this.iabRef) this.iabRef.close(); this.showScreen('screen-login'); } 
+        else if (this.iabRef) this.iabRef.show();
     }
 };
 app.init();
