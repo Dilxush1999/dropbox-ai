@@ -5,6 +5,7 @@ const app = {
     storedPinHash: '',
     tempPin: '',
     isChangingPin: false,
+    loginPurpose: 'app', // 'app' yoki 'settings'
     lockoutTimer: 0,
     failedAttempts: 0,
     lastActiveTime: Date.now(),
@@ -24,7 +25,6 @@ const app = {
         this.checkNetwork();
 
         if (!this.storedPinHash) {
-            this.isChangingPin = false;
             this.showScreen('screen-set-pin');
             document.getElementById('btn-cancel-set').classList.add('hidden');
         } else {
@@ -141,9 +141,16 @@ const app = {
         const hash = await this.hashPin(this.currentPin);
         if (hash === this.storedPinHash) {
             this.failedAttempts = 0;
+            const currentPurpose = this.loginPurpose;
+            this.loginPurpose = 'app'; // reset
             this.currentPin = '';
             this.updateDots('login');
-            this.openWebApp();
+            
+            if (currentPurpose === 'settings') {
+                this.showSettingsModal();
+            } else {
+                this.openWebApp();
+            }
         } else {
             this.failedAttempts++;
             this.currentPin = '';
@@ -225,24 +232,57 @@ const app = {
 
     injectPullToRefresh: function() {
         const script = `(function() {
-            let startY = 0; let isRefreshing = false; const refreshThreshold = 150;
+            let startY = 0; 
+            let isRefreshing = false; 
+            const refreshThreshold = 150;
             const ptrDiv = document.createElement('div');
-            ptrDiv.style.cssText = 'position:fixed;top:-60px;left:0;width:100%;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(0,123,255,0.9);color:white;z-index:99999;transition:top 0.2s;font-family:sans-serif;';
+            
+            ptrDiv.style.cssText = 'position:fixed;top:-70px;left:0;width:100%;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(0,123,255,0.95);color:white;z-index:2147483647;transition:top 0.2s;font-family:sans-serif;box-shadow:0 2px 10px rgba(0,0,0,0.2);border-radius:0 0 15px 15px;font-weight:bold;';
             ptrDiv.innerHTML = '⬇️ Yangilash uchun torting';
             document.body.appendChild(ptrDiv);
-            window.addEventListener('touchstart', (e) => { startY = (window.pageYOffset === 0) ? e.touches[0].pageY : -1; }, {passive: true});
-            window.addEventListener('touchmove', (e) => {
-                if (startY === -1 || isRefreshing) return;
-                let diff = e.touches[0].pageY - startY;
-                if (diff > 0) {
-                    ptrDiv.style.top = Math.min(diff - 60, 0) + 'px';
-                    ptrDiv.innerHTML = (diff > refreshThreshold) ? '🔄 Yangilash uchun qo\\u027vorni yuboring' : '⬇️ Yangilash uchun torting';
+
+            const getScrollTop = () => {
+                return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            };
+
+            window.addEventListener('touchstart', (e) => {
+                if (getScrollTop() <= 5) {
+                    startY = e.touches[0].pageY;
+                } else {
+                    startY = -1;
                 }
             }, {passive: true});
+
+            window.addEventListener('touchmove', (e) => {
+                if (startY === -1 || isRefreshing) return;
+                let moveY = e.touches[0].pageY;
+                let diff = moveY - startY;
+                
+                if (diff > 0 && getScrollTop() <= 5) {
+                    // Prevent default only if we are actually pulling down at the top
+                    let topPos = Math.min(diff / 2 - 70, 0);
+                    ptrDiv.style.top = topPos + 'px';
+                    ptrDiv.innerHTML = (diff > refreshThreshold) ? '🔄 Yangilash uchun qo\\u027vorni yuboring' : '⬇️ Yangilash uchun torting';
+                    
+                    if (diff > 10) {
+                        // Attempt to block native scroll if possible (might not work with passive:true)
+                    }
+                } else {
+                    ptrDiv.style.top = '-70px';
+                }
+            }, {passive: true});
+
             window.addEventListener('touchend', () => {
                 if (startY === -1 || isRefreshing) return;
-                if (parseInt(ptrDiv.style.top) >= -10) { isRefreshing = true; ptrDiv.innerHTML = '⌛ Yangilanmoqda...'; location.reload(); }
-                else { ptrDiv.style.top = '-60px'; }
+                let currentTop = parseInt(ptrDiv.style.top);
+                if (currentTop >= -20) {
+                    isRefreshing = true;
+                    ptrDiv.style.top = '0px';
+                    ptrDiv.innerHTML = '⌛ Yangilanmoqda...';
+                    location.reload();
+                } else {
+                    ptrDiv.style.top = '-70px';
+                }
                 startY = -1;
             });
         })();`;
@@ -284,6 +324,14 @@ const app = {
     },
 
     showSettings: function() {
+        // Avval PINni tekshirish kerak
+        this.loginPurpose = 'settings';
+        this.currentPin = '';
+        this.updateDots('login');
+        alert('Sozlamalarga kirish uchun PIN-kodni kiriting');
+    },
+
+    showSettingsModal: function() {
         document.getElementById('modal-settings').classList.remove('hidden');
         document.getElementById('select-autolock').value = localStorage.getItem('autolock_time') || '0';
     },
