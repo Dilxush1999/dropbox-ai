@@ -159,18 +159,37 @@ const app = {
         const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=yes';
         this.iabRef = cordova.InAppBrowser.open(this.url, '_blank', opt);
         
-        this.iabRef.addEventListener('loadstop', () => this.injectAll());
+        this.iabRef.addEventListener('loadstop', (e) => {
+            this.currentUrl = e.url;
+            this.injectAll();
+        });
         
         this.iabRef.addEventListener('message', (e) => {
-            if (e.data && e.data.action === 'exit_app') {
-                this.iabRef.close();
-                navigator.app.exitApp();
+            if (e.data && e.data.action === 'dashboard_back') {
+                this.backPressCount++;
+                if (this.backPressCount === 1) {
+                    // Show toast inside IAB because Cordova WebView is hidden behind it
+                    this.iabRef.executeScript({ code: `
+                        var t = document.createElement('div');
+                        t.innerText = 'Chiqish uchun yana bir bor bosing';
+                        t.style.cssText = 'position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:10px 20px;border-radius:20px;z-index:2147483647;font-family:sans-serif;font-size:14px;transition:opacity 0.3s;';
+                        document.body.appendChild(t);
+                        setTimeout(function(){ t.style.opacity = '0'; setTimeout(function(){ t.remove(); }, 300); }, 2000);
+                    `});
+                    setTimeout(() => { this.backPressCount = 0; }, 2000);
+                } else if (this.backPressCount >= 2) {
+                    this.iabRef.close();
+                    navigator.app.exitApp();
+                }
             }
         });
 
         this.iabRef.addEventListener('exit', () => { 
             this.iabRef = null; 
-            this.showScreen('screen-login'); 
+            // Only show login screen if we didn't explicitly exit the app
+            if (this.backPressCount < 2) {
+                this.showScreen('screen-login'); 
+            }
         });
     },
 
@@ -186,26 +205,21 @@ const app = {
                     }
                 });
 
-                // --- 2. Dashboard Double-Back Exit Logic ---
-                if (window.location.href.includes('dashboard.php')) {
+                // --- 2. Dashboard/Login Double-Back Exit Logic ---
+                var href = window.location.href;
+                if (href.includes('dashboard.php') || href.includes('login.php')) {
                     if (!window.__dbIntercepted) {
                         window.__dbIntercepted = true;
-                        window.__backPressCount = 0;
+                        
+                        // Push a dummy state so back button triggers popstate instead of native back
                         history.pushState({trap: true}, "");
+                        
                         window.addEventListener('popstate', function(e) {
-                            window.__backPressCount++;
-                            if (window.__backPressCount === 1) {
-                                var t = document.createElement('div');
-                                t.innerText = 'Chiqish uchun yana bir bor bosing';
-                                t.style.cssText = 'position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:10px 20px;border-radius:20px;z-index:2147483647;font-family:sans-serif;font-size:14px;transition:opacity 0.3s;';
-                                document.body.appendChild(t);
-                                setTimeout(function(){ t.style.opacity = '0'; setTimeout(function(){ t.remove(); }, 300); window.__backPressCount = 0; }, 2000);
-                                history.pushState({trap: true}, ""); // Reset trap
-                            } else if (window.__backPressCount >= 2) {
-                                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {
-                                    window.webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify({action: 'exit_app'}));
-                                }
+                            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {
+                                window.webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify({action: 'dashboard_back'}));
                             }
+                            // Push trap again to keep catching back presses
+                            history.pushState({trap: true}, "");
                         });
                     }
                 }
@@ -253,7 +267,11 @@ const app = {
         this.iabRef.executeScript({ code: ptrScript });
     },
 
-    onBackKeyDown: function() {
+    onBackKeyDown: function(e) {
+        if (this.iabRef) {
+            return; // Native hardwareback=yes takes care of IAB history. Dashboard/login intercept is in the injected script.
+        }
+
         // Handle Cordova native screens exit
         if (!document.getElementById('modal-settings').classList.contains('hidden')) {
             this.hideSettings();
