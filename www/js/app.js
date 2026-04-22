@@ -11,6 +11,7 @@ const app = {
     lastActiveTime: Date.now(),
     isNetworkOffline: false,
     backPressCount: 0,
+    reopenTimer: null,
 
     init: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
@@ -168,7 +169,6 @@ const app = {
             if (e.data && e.data.action === 'dashboard_back') {
                 this.backPressCount++;
                 if (this.backPressCount === 1) {
-                    // Show toast inside IAB because Cordova WebView is hidden behind it
                     this.iabRef.executeScript({ code: `
                         var t = document.createElement('div');
                         t.innerText = 'Chiqish uchun yana bir bor bosing';
@@ -178,16 +178,26 @@ const app = {
                     `});
                     setTimeout(() => { this.backPressCount = 0; }, 2000);
                 } else if (this.backPressCount >= 2) {
-                    this.iabRef.close();
-                    navigator.app.exitApp();
+                    this.doAppExit();
                 }
             }
         });
 
         this.iabRef.addEventListener('exit', () => { 
             this.iabRef = null; 
-            // Only show login screen if we didn't explicitly exit the app
-            if (this.backPressCount < 2) {
+            
+            // Check if it closed natively from dashboard/login
+            if (this.currentUrl && (this.currentUrl.includes('dashboard.php') || this.currentUrl.includes('login.php'))) {
+                this.backPressCount = 1;
+                this.showScreen('screen-waiting'); // Blank screen to hide UI
+                this.showToast('Chiqish uchun yana bir bor bosing');
+                
+                clearTimeout(this.reopenTimer);
+                this.reopenTimer = setTimeout(() => {
+                    this.backPressCount = 0;
+                    this.openWebApp();
+                }, 2000);
+            } else {
                 this.showScreen('screen-login'); 
             }
         });
@@ -205,20 +215,24 @@ const app = {
                     }
                 });
 
-                // --- 2. Dashboard/Login Double-Back Exit Logic ---
+                // --- 2. Dashboard/Login Trap (Requires User Interaction) ---
                 var href = window.location.href;
                 if (href.includes('dashboard.php') || href.includes('login.php')) {
-                    if (!window.__dbIntercepted) {
-                        window.__dbIntercepted = true;
-                        
-                        // Push a dummy state so back button triggers popstate instead of native back
-                        history.pushState({trap: true}, "");
+                    if (!window.__trapSet) {
+                        window.__trapSet = true;
+                        // We push state only AFTER first touch to bypass browser security
+                        window.addEventListener('touchstart', function() {
+                            if (!window.__statePushed) {
+                                window.__statePushed = true;
+                                history.pushState({trap: true}, "");
+                            }
+                        }, {once: true});
                         
                         window.addEventListener('popstate', function(e) {
                             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {
                                 window.webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify({action: 'dashboard_back'}));
                             }
-                            // Push trap again to keep catching back presses
+                            // Re-arm trap
                             history.pushState({trap: true}, "");
                         });
                     }
@@ -267,29 +281,42 @@ const app = {
         this.iabRef.executeScript({ code: ptrScript });
     },
 
+    doAppExit: function() {
+        if (this.iabRef) this.iabRef.close();
+        if (navigator.app && navigator.app.exitApp) {
+            navigator.app.exitApp();
+        } else if (navigator.device && navigator.device.exitApp) {
+            navigator.device.exitApp();
+        } else {
+            window.close();
+        }
+    },
+
     onBackKeyDown: function(e) {
         if (this.iabRef) {
-            return; // Native hardwareback=yes takes care of IAB history. Dashboard/login intercept is in the injected script.
+            return; // InAppBrowser handles its own hardware back natively
         }
 
-        // Handle Cordova native screens exit
+        // We are in Cordova Context (PIN screen or waiting screen)
         if (!document.getElementById('modal-settings').classList.contains('hidden')) {
             this.hideSettings();
         } else if (!document.getElementById('modal-verify').classList.contains('hidden')) {
             this.closeVerifyModal();
+        } else if (!document.getElementById('screen-waiting').classList.contains('hidden')) {
+            // We are in the 2-second trap from native exit!
+            clearTimeout(this.reopenTimer);
+            this.doAppExit();
         } else if (!document.getElementById('screen-login').classList.contains('hidden') || 
                    !document.getElementById('screen-set-pin').classList.contains('hidden')) {
-            this.handleDoubleBackExit();
-        }
-    },
-
-    handleDoubleBackExit: function() {
-        this.backPressCount++;
-        if (this.backPressCount === 1) {
-            this.showToast('Chiqish uchun yana bir bor bosing');
-            setTimeout(() => { this.backPressCount = 0; }, 2000);
-        } else if (this.backPressCount >= 2) {
-            navigator.app.exitApp();
+            
+            // Double back exit from PIN screens
+            this.backPressCount++;
+            if (this.backPressCount === 1) {
+                this.showToast('Chiqish uchun yana bir bor bosing');
+                setTimeout(() => { this.backPressCount = 0; }, 2000);
+            } else if (this.backPressCount >= 2) {
+                this.doAppExit();
+            }
         }
     },
 
@@ -305,7 +332,7 @@ const app = {
     onResume: function() {
         const auto = parseInt(localStorage.getItem('autolock_time') || '0');
         if (auto > 0 && (Date.now() - this.lastActiveTime) / 60000 >= auto) { if (this.iabRef) this.iabRef.close(); this.showScreen('screen-login'); } 
-        else if (this.iabRef) this.iabRef.show();
+        else if (this.iabRef && document.getElementById('screen-waiting').classList.contains('hidden')) this.iabRef.show();
     }
 };
 app.init();
