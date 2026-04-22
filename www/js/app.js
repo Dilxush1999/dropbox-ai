@@ -14,10 +14,11 @@ const app = {
     reopenTimer: null,
 
     init: function() {
+        this.boundOnBackKeyDown = this.onBackKeyDown.bind(this);
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
         document.addEventListener('pause', this.onPause.bind(this), false);
         document.addEventListener('resume', this.onResume.bind(this), false);
-        document.addEventListener('backbutton', this.onBackKeyDown.bind(this), false);
+        document.addEventListener('backbutton', this.boundOnBackKeyDown, false);
     },
 
     onDeviceReady: function() {
@@ -187,16 +188,17 @@ const app = {
             this.iabRef = null; 
             
             // Check if it closed natively from dashboard/login
+            // Native back button closed IAB because history was empty
             if (this.currentUrl && (this.currentUrl.includes('dashboard.php') || this.currentUrl.includes('login.php'))) {
                 this.backPressCount = 1;
-                this.showScreen('screen-waiting'); // Blank screen to hide UI
-                this.showToast('Chiqish uchun yana bir bor bosing');
+                this.showScreen('screen-exit'); // Show the beautiful exit confirmation screen
                 
+                // If they don't press back again within 2.5 seconds, reopen the app silently
                 clearTimeout(this.reopenTimer);
                 this.reopenTimer = setTimeout(() => {
                     this.backPressCount = 0;
                     this.openWebApp();
-                }, 2000);
+                }, 2500);
             } else {
                 this.showScreen('screen-login'); 
             }
@@ -282,34 +284,47 @@ const app = {
     },
 
     doAppExit: function() {
-        if (this.iabRef) this.iabRef.close();
-        if (navigator.app && navigator.app.exitApp) {
-            navigator.app.exitApp();
-        } else if (navigator.device && navigator.device.exitApp) {
-            navigator.device.exitApp();
-        } else {
-            window.close();
+        if (this.iabRef) {
+            this.iabRef.close();
+            this.iabRef = null;
+        }
+        
+        // Safety net: Remove the Cordova listener. If programmatic exit fails, 
+        // the native OS will definitely close the app on the next back press.
+        if (this.boundOnBackKeyDown) {
+            document.removeEventListener('backbutton', this.boundOnBackKeyDown, false);
+        }
+
+        try {
+            if (navigator.app && navigator.app.exitApp) {
+                navigator.app.exitApp();
+            } else if (navigator.device && navigator.device.exitApp) {
+                navigator.device.exitApp();
+            } else {
+                window.close();
+            }
+        } catch (e) {
+            console.error('Exit failed', e);
         }
     },
 
     onBackKeyDown: function(e) {
         if (this.iabRef) {
-            return; // InAppBrowser handles its own hardware back natively
+            return; // Native hardwareback=yes takes care of IAB history
         }
 
-        // We are in Cordova Context (PIN screen or waiting screen)
+        // Handle Cordova native screens exit
         if (!document.getElementById('modal-settings').classList.contains('hidden')) {
             this.hideSettings();
         } else if (!document.getElementById('modal-verify').classList.contains('hidden')) {
             this.closeVerifyModal();
-        } else if (!document.getElementById('screen-waiting').classList.contains('hidden')) {
-            // We are in the 2-second trap from native exit!
+        } else if (!document.getElementById('screen-exit').classList.contains('hidden')) {
+            // User pressed back on the exit confirmation screen!
             clearTimeout(this.reopenTimer);
             this.doAppExit();
         } else if (!document.getElementById('screen-login').classList.contains('hidden') || 
                    !document.getElementById('screen-set-pin').classList.contains('hidden')) {
             
-            // Double back exit from PIN screens
             this.backPressCount++;
             if (this.backPressCount === 1) {
                 this.showToast('Chiqish uchun yana bir bor bosing');
