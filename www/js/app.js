@@ -5,13 +5,12 @@ const app = {
     storedPinHash: '',
     tempPin: '',
     isChangingPin: false,
+    loginPurpose: 'app',
     lockoutTimer: 0,
     failedAttempts: 0,
     lastActiveTime: Date.now(),
     isNetworkOffline: false,
-    currentUrl: '',
     backPressCount: 0,
-    backPressTimer: null,
 
     init: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
@@ -111,8 +110,16 @@ const app = {
     handleLogin: async function() {
         const h = await this.hashPin(this.currentPin);
         if (h === this.storedPinHash) {
-            this.failedAttempts = 0; this.currentPin = ''; this.updateDots('login');
-            this.openWebApp();
+            this.failedAttempts = 0; 
+            const purpose = this.loginPurpose;
+            this.loginPurpose = 'app';
+            this.currentPin = ''; this.updateDots('login');
+            
+            if (purpose === 'settings') {
+                this.showSettingsModal();
+            } else {
+                this.openWebApp();
+            }
         } else {
             this.failedAttempts++; this.currentPin = ''; this.updateDots('login');
             if (this.failedAttempts >= 5) this.startLockout();
@@ -149,29 +156,78 @@ const app = {
     },
 
     openWebApp: function() {
-        // hardwareback=no to intercept and handle double-press / refresh
-        const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=no';
+        const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=yes';
         this.iabRef = cordova.InAppBrowser.open(this.url, '_blank', opt);
-        this.iabRef.addEventListener('loadstop', (e) => {
-            this.currentUrl = e.url;
-            this.injectAll();
+        
+        this.iabRef.addEventListener('loadstop', () => this.injectAll());
+        
+        this.iabRef.addEventListener('message', (e) => {
+            if (e.data && e.data.action === 'exit_app') {
+                this.iabRef.close();
+                navigator.app.exitApp();
+            }
         });
-        this.iabRef.addEventListener('exit', () => { this.iabRef = null; this.showScreen('screen-login'); });
+
+        this.iabRef.addEventListener('exit', () => { 
+            this.iabRef = null; 
+            this.showScreen('screen-login'); 
+        });
     },
 
     injectAll: function() {
         const ptrScript = `
             (function() {
-                if (window.ptrInitialized) return; window.ptrInitialized = true;
+                // --- 1. History Reload Logic ---
+                window.addEventListener('pageshow', function(event) {
+                    var perf = window.performance;
+                    var isBack = event.persisted || (perf && perf.getEntriesByType("navigation").length && perf.getEntriesByType("navigation")[0].type === "back_forward");
+                    if (isBack) {
+                        window.location.reload();
+                    }
+                });
+
+                // --- 2. Dashboard Double-Back Exit Logic ---
+                if (window.location.href.includes('dashboard.php')) {
+                    if (!window.__dbIntercepted) {
+                        window.__dbIntercepted = true;
+                        window.__backPressCount = 0;
+                        history.pushState({trap: true}, "");
+                        window.addEventListener('popstate', function(e) {
+                            window.__backPressCount++;
+                            if (window.__backPressCount === 1) {
+                                var t = document.createElement('div');
+                                t.innerText = 'Chiqish uchun yana bir bor bosing';
+                                t.style.cssText = 'position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:10px 20px;border-radius:20px;z-index:2147483647;font-family:sans-serif;font-size:14px;transition:opacity 0.3s;';
+                                document.body.appendChild(t);
+                                setTimeout(function(){ t.style.opacity = '0'; setTimeout(function(){ t.remove(); }, 300); window.__backPressCount = 0; }, 2000);
+                                history.pushState({trap: true}, ""); // Reset trap
+                            } else if (window.__backPressCount >= 2) {
+                                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {
+                                    window.webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify({action: 'exit_app'}));
+                                }
+                            }
+                        });
+                    }
+                }
+
+                // --- 3. Pull-To-Refresh Logic ---
+                if (window.ptrInitialized) return; 
+                window.ptrInitialized = true;
                 let startY = 0, diff = 0, isRefreshing = false;
                 const threshold = 140;
+                
                 const ptr = document.createElement('div');
                 ptr.id = 'custom-ptr';
-                ptr.style.cssText = 'position:fixed;top:-100px;left:50%;transform:translateX(-50%);width:60px;height:60px;background:rgba(255,255,255,0.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.3);border-radius:50%;z-index:2147483647;display:flex;align-items:center;justify-content:center;transition:top 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.2s;';
+                ptr.style.cssText = 'position:fixed;top:-100px;left:50%;transform:translateX(-50%);width:60px;height:60px;background:rgba(255,255,255,0.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.3);border-radius:50%;z-index:2147483646;display:flex;align-items:center;justify-content:center;transition:top 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.2s;';
                 ptr.innerHTML = '<svg id="ptr-svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.1s linear;"><path d="M7 13l5 5 5-5M12 18V6"/></svg>';
                 document.body.appendChild(ptr);
+                
                 const getScroll = () => window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-                window.addEventListener('touchstart', (e) => { if (getScroll() <= 5) startY = e.touches[0].pageY; else startY = -1; }, {passive: true});
+                
+                window.addEventListener('touchstart', (e) => { 
+                    if (getScroll() <= 5) startY = e.touches[0].pageY; else startY = -1; 
+                }, {passive: true});
+                
                 window.addEventListener('touchmove', (e) => {
                     if (startY === -1 || isRefreshing) return;
                     diff = e.touches[0].pageY - startY;
@@ -182,6 +238,7 @@ const app = {
                         ptr.style.background = diff > threshold ? 'rgba(0,123,255,0.6)' : 'rgba(255,255,255,0.15)';
                     }
                 }, {passive: true});
+                
                 window.addEventListener('touchend', () => {
                     if (startY === -1 || isRefreshing) return;
                     if (parseInt(ptr.style.top) > 20 && diff > threshold) {
@@ -191,55 +248,21 @@ const app = {
                     } else { ptr.style.top = '-100px'; }
                     startY = -1;
                 });
-                // Force refresh on history back
-                window.onpopstate = function() { location.reload(); };
             })();
         `;
         this.iabRef.executeScript({ code: ptrScript });
     },
 
     onBackKeyDown: function() {
-        const now = Date.now();
-        
-        // 1. PIN screens exit logic
-        if (!document.getElementById('screen-login').classList.contains('hidden') || 
-            !document.getElementById('screen-set-pin').classList.contains('hidden')) {
+        // Handle Cordova native screens exit
+        if (!document.getElementById('modal-settings').classList.contains('hidden')) {
+            this.hideSettings();
+        } else if (!document.getElementById('modal-verify').classList.contains('hidden')) {
+            this.closeVerifyModal();
+        } else if (!document.getElementById('screen-login').classList.contains('hidden') || 
+                   !document.getElementById('screen-set-pin').classList.contains('hidden')) {
             this.handleDoubleBackExit();
-            return;
         }
-
-        // 2. IAB handling
-        if (this.iabRef) {
-            // Check if dashboard
-            if (this.currentUrl.includes('dashboard.php')) {
-                this.handleDoubleBackExit();
-                return;
-            }
-
-            // Normal back with history
-            this.iabRef.executeScript({ 
-                code: `(function(){
-                    if(window.history.length > 1) { 
-                        window.history.back(); 
-                        return 'BACK_OK'; 
-                    } else { 
-                        return 'DASHBOARD_OR_EMPTY'; 
-                    }
-                })()` 
-            }, (res) => {
-                if (res && res[0] === 'DASHBOARD_OR_EMPTY') {
-                    this.handleDoubleBackExit();
-                }
-                // Reset counter on any successful back within history
-                this.backPressCount = 0;
-            });
-            return;
-        }
-
-        // 3. Modals
-        if (!document.getElementById('modal-settings').classList.contains('hidden')) this.hideSettings();
-        else if (!document.getElementById('modal-verify').classList.contains('hidden')) this.closeVerifyModal();
-        else this.handleDoubleBackExit();
     },
 
     handleDoubleBackExit: function() {
@@ -248,7 +271,6 @@ const app = {
             this.showToast('Chiqish uchun yana bir bor bosing');
             setTimeout(() => { this.backPressCount = 0; }, 2000);
         } else if (this.backPressCount >= 2) {
-            if (this.iabRef) this.iabRef.close();
             navigator.app.exitApp();
         }
     },
