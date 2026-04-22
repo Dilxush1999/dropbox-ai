@@ -10,6 +10,8 @@ const app = {
     lastActiveTime: Date.now(),
     isNetworkOffline: false,
     currentUrl: '',
+    backPressCount: 0,
+    backPressTimer: null,
 
     init: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
@@ -21,16 +23,21 @@ const app = {
     onDeviceReady: function() {
         this.storedPinHash = localStorage.getItem('pin_hash');
         this.setupNumpads();
-        if (!this.storedPinHash) {
-            this.showScreen('screen-set-pin');
-        } else {
-            this.showScreen('screen-login');
-        }
+        if (!this.storedPinHash) this.showScreen('screen-set-pin');
+        else this.showScreen('screen-login');
         document.addEventListener("offline", () => {
             this.isNetworkOffline = true;
             if (this.iabRef) this.iabRef.close();
             this.showScreen('screen-no-internet');
         }, false);
+    },
+
+    showToast: function(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.classList.remove('hidden');
+        clearTimeout(this.toastTimer);
+        this.toastTimer = setTimeout(() => t.classList.add('hidden'), 2000);
     },
 
     showMessage: function(title, text, icon = '✔️') {
@@ -44,27 +51,18 @@ const app = {
 
     setupNumpads: function() {
         const create = (id, type) => {
-            const container = document.getElementById(id);
-            container.innerHTML = '';
+            const container = document.getElementById(id); container.innerHTML = '';
             for (let i = 1; i <= 9; i++) {
-                const b = document.createElement('div');
-                b.className = 'num-btn'; b.innerText = i;
-                b.onclick = () => this.handleInput(i, type);
-                container.appendChild(b);
+                const b = document.createElement('div'); b.className = 'num-btn'; b.innerText = i;
+                b.onclick = () => this.handleInput(i, type); container.appendChild(b);
             }
             container.appendChild(Object.assign(document.createElement('div'), {className:'num-btn empty'}));
-            const z = document.createElement('div');
-            z.className = 'num-btn'; z.innerText = '0';
-            z.onclick = () => this.handleInput(0, type);
-            container.appendChild(z);
-            const d = document.createElement('div');
-            d.className = 'num-btn'; d.innerText = '⌫';
-            d.onclick = () => this.handleInput('del', type);
-            container.appendChild(d);
+            const z = document.createElement('div'); z.className = 'num-btn'; z.innerText = '0';
+            z.onclick = () => this.handleInput(0, type); container.appendChild(z);
+            const d = document.createElement('div'); d.className = 'num-btn'; d.innerText = '⌫';
+            d.onclick = () => this.handleInput('del', type); container.appendChild(d);
         };
-        create('numpad-set', 'set');
-        create('numpad-login', 'login');
-        create('numpad-verify', 'verify');
+        create('numpad-set', 'set'); create('numpad-login', 'login'); create('numpad-verify', 'verify');
     },
 
     handleInput: async function(val, type) {
@@ -93,10 +91,8 @@ const app = {
 
     handleSetPin: async function() {
         if (!this.tempPin) {
-            this.tempPin = this.currentPin;
-            this.currentPin = '';
-            document.getElementById('set-pin-title').innerText = 'PINni tasdiqlang';
-            this.updateDots('set');
+            this.tempPin = this.currentPin; this.currentPin = '';
+            document.getElementById('set-pin-title').innerText = 'PINni tasdiqlang'; this.updateDots('set');
         } else {
             if (this.tempPin === this.currentPin) {
                 this.storedPinHash = await this.hashPin(this.currentPin);
@@ -107,8 +103,7 @@ const app = {
             } else {
                 this.showMessage('Xato', 'PIN mos kelmadi, qayta urinib ko\'ring', '❌');
                 this.currentPin = ''; this.tempPin = '';
-                document.getElementById('set-pin-title').innerText = 'Yangi PIN o\'rnating';
-                this.updateDots('set');
+                document.getElementById('set-pin-title').innerText = 'Yangi PIN o\'rnating'; this.updateDots('set');
             }
         }
     },
@@ -116,8 +111,7 @@ const app = {
     handleLogin: async function() {
         const h = await this.hashPin(this.currentPin);
         if (h === this.storedPinHash) {
-            this.failedAttempts = 0; this.currentPin = '';
-            this.updateDots('login');
+            this.failedAttempts = 0; this.currentPin = ''; this.updateDots('login');
             this.openWebApp();
         } else {
             this.failedAttempts++; this.currentPin = ''; this.updateDots('login');
@@ -130,8 +124,7 @@ const app = {
         const h = await this.hashPin(this.currentPin);
         if (h === this.storedPinHash) {
             this.currentPin = ''; this.updateDots('verify');
-            this.closeVerifyModal();
-            this.showSettingsModal();
+            this.closeVerifyModal(); this.showSettingsModal();
         } else {
             this.currentPin = ''; this.updateDots('verify');
             this.showMessage('Xato', 'Noto\'g\'ri PIN kod', '❌');
@@ -140,8 +133,7 @@ const app = {
 
     startLockout: function() {
         this.lockoutTimer = 30;
-        const msg = document.getElementById('lockout-timer');
-        const val = document.getElementById('timer-val');
+        const msg = document.getElementById('lockout-timer'); const val = document.getElementById('timer-val');
         msg.classList.remove('hidden');
         const interval = setInterval(() => {
             this.lockoutTimer--; val.innerText = this.lockoutTimer;
@@ -152,72 +144,54 @@ const app = {
     showScreen: function(id) {
         document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
         document.getElementById(id).classList.remove('hidden');
-        if (id !== 'screen-login') document.getElementById('settings-trigger').classList.add('hidden');
-        else document.getElementById('settings-trigger').classList.remove('hidden');
+        if (id === 'screen-login') document.getElementById('settings-trigger').classList.remove('hidden');
+        else document.getElementById('settings-trigger').classList.add('hidden');
     },
 
     openWebApp: function() {
-        const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=no'; // hardwareback=no so we can handle it manually
+        // hardwareback=no to intercept and handle double-press / refresh
+        const opt = 'location=no,toolbar=no,zoom=no,hidden=no,hardwareback=no';
         this.iabRef = cordova.InAppBrowser.open(this.url, '_blank', opt);
-        
         this.iabRef.addEventListener('loadstop', (e) => {
             this.currentUrl = e.url;
             this.injectAll();
         });
-        this.iabRef.addEventListener('exit', () => {
-            this.iabRef = null;
-            this.showScreen('screen-login');
-        });
+        this.iabRef.addEventListener('exit', () => { this.iabRef = null; this.showScreen('screen-login'); });
     },
 
     injectAll: function() {
-        // Ultimate Pull-To-Refresh with Arrow Animation
         const ptrScript = `
             (function() {
-                if (window.ptrInitialized) return;
-                window.ptrInitialized = true;
-                let startY = 0, diff = 0, isRefreshing = false, isDragging = false;
+                if (window.ptrInitialized) return; window.ptrInitialized = true;
+                let startY = 0, diff = 0, isRefreshing = false;
                 const threshold = 140;
-
                 const ptr = document.createElement('div');
                 ptr.id = 'custom-ptr';
                 ptr.style.cssText = 'position:fixed;top:-100px;left:50%;transform:translateX(-50%);width:60px;height:60px;background:rgba(255,255,255,0.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.3);border-radius:50%;z-index:2147483647;display:flex;align-items:center;justify-content:center;transition:top 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.2s;';
                 ptr.innerHTML = '<svg id="ptr-svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.1s linear;"><path d="M7 13l5 5 5-5M12 18V6"/></svg>';
                 document.body.appendChild(ptr);
-
                 const getScroll = () => window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-
-                window.addEventListener('touchstart', (e) => {
-                    if (getScroll() <= 5) { startY = e.touches[0].pageY; isDragging = true; }
-                    else startY = -1;
-                }, {passive: true});
-
+                window.addEventListener('touchstart', (e) => { if (getScroll() <= 5) startY = e.touches[0].pageY; else startY = -1; }, {passive: true});
                 window.addEventListener('touchmove', (e) => {
                     if (startY === -1 || isRefreshing) return;
                     diff = e.touches[0].pageY - startY;
                     if (diff > 0 && getScroll() <= 5) {
-                        let top = Math.min(diff / 2.2 - 80, 40);
-                        ptr.style.top = top + 'px';
+                        let top = Math.min(diff / 2.2 - 80, 40); ptr.style.top = top + 'px';
                         let rotation = Math.min(diff * 2, 180);
                         document.getElementById('ptr-svg').style.transform = 'rotate(' + (diff > threshold ? 180 : rotation) + 'deg)';
                         ptr.style.background = diff > threshold ? 'rgba(0,123,255,0.6)' : 'rgba(255,255,255,0.15)';
                     }
                 }, {passive: true});
-
                 window.addEventListener('touchend', () => {
                     if (startY === -1 || isRefreshing) return;
                     if (parseInt(ptr.style.top) > 20 && diff > threshold) {
-                        isRefreshing = true; ptr.style.top = '40px';
-                        ptr.innerHTML = '<div class="ptr-loader"></div>'; // Simple loader
-                        const s = document.createElement('style');
-                        s.innerHTML = '.ptr-loader{width:20px;height:20px;border:3px solid #fff;border-top-color:transparent;border-radius:50%;animation:ptr-rot 0.6s linear infinite;} @keyframes ptr-rot{to{transform:rotate(360deg)}}';
-                        document.head.appendChild(s);
-                        location.reload();
+                        isRefreshing = true; ptr.style.top = '40px'; ptr.innerHTML = '<div class="ptr-loader"></div>';
+                        const s = document.createElement('style'); s.innerHTML = '.ptr-loader{width:20px;height:20px;border:3px solid #fff;border-top-color:transparent;border-radius:50%;animation:ptr-rot 0.6s linear infinite;} @keyframes ptr-rot{to{transform:rotate(360deg)}}';
+                        document.head.appendChild(s); location.reload();
                     } else { ptr.style.top = '-100px'; }
-                    startY = -1; isDragging = false;
+                    startY = -1;
                 });
-
-                // History refresh handler
+                // Force refresh on history back
                 window.onpopstate = function() { location.reload(); };
             })();
         `;
@@ -225,27 +199,39 @@ const app = {
     },
 
     onBackKeyDown: function() {
-        // 1. PIN Screen exit
+        const now = Date.now();
+        
+        // 1. PIN screens exit logic
         if (!document.getElementById('screen-login').classList.contains('hidden') || 
             !document.getElementById('screen-set-pin').classList.contains('hidden')) {
-            navigator.app.exitApp();
+            this.handleDoubleBackExit();
             return;
         }
 
         // 2. IAB handling
         if (this.iabRef) {
-            // Check dashboard
+            // Check if dashboard
             if (this.currentUrl.includes('dashboard.php')) {
-                this.iabRef.close();
-                navigator.app.exitApp();
+                this.handleDoubleBackExit();
                 return;
             }
 
-            // Normal history back with refresh
-            this.iabRef.executeScript({ code: "if(window.history.length > 1) { window.history.back(); setTimeout(function(){location.reload();}, 100); } else { 'EXIT_IAB' }" }, (res) => {
-                if (res && res[0] === 'EXIT_IAB') {
-                    this.iabRef.close();
+            // Normal back with history
+            this.iabRef.executeScript({ 
+                code: `(function(){
+                    if(window.history.length > 1) { 
+                        window.history.back(); 
+                        return 'BACK_OK'; 
+                    } else { 
+                        return 'DASHBOARD_OR_EMPTY'; 
+                    }
+                })()` 
+            }, (res) => {
+                if (res && res[0] === 'DASHBOARD_OR_EMPTY') {
+                    this.handleDoubleBackExit();
                 }
+                // Reset counter on any successful back within history
+                this.backPressCount = 0;
             });
             return;
         }
@@ -253,7 +239,18 @@ const app = {
         // 3. Modals
         if (!document.getElementById('modal-settings').classList.contains('hidden')) this.hideSettings();
         else if (!document.getElementById('modal-verify').classList.contains('hidden')) this.closeVerifyModal();
-        else navigator.app.exitApp();
+        else this.handleDoubleBackExit();
+    },
+
+    handleDoubleBackExit: function() {
+        this.backPressCount++;
+        if (this.backPressCount === 1) {
+            this.showToast('Chiqish uchun yana bir bor bosing');
+            setTimeout(() => { this.backPressCount = 0; }, 2000);
+        } else if (this.backPressCount >= 2) {
+            if (this.iabRef) this.iabRef.close();
+            navigator.app.exitApp();
+        }
     },
 
     requestSettingsAccess: function() { this.currentPin = ''; this.updateDots('verify'); document.getElementById('modal-verify').classList.remove('hidden'); },

@@ -148,3 +148,21 @@ select { background: #152035; color: white; border: 1px solid var(--glass-border
 
 .error-msg { color: #ff4d4d; margin-bottom: 1rem; font-size: 1rem; font-weight: bold; }
 .subtitle { color: var(--text-dim); margin-bottom: 1.5rem; font-size: 0.9rem; }
+
+/* Toast */
+.toast {
+    position: fixed;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    z-index: 2000;
+    transition: opacity 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.toast.hidden { opacity: 0; pointer-events: none; }
