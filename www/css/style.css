@@ -1,0 +1,248 @@
+:root {
+    --bg-dark: #050a14;
+    --accent-blue: #007bff;
+    --accent-light: #4dabff;
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --text-white: #ffffff;
+    --text-dim: rgba(255, 255, 255, 0.7);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    background: var(--bg-dark);
+    color: var(--text-white);
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* Background Blobs */
+.bg-blobs {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    overflow: hidden;
+}
+
+.blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    animation: move 20s infinite alternate ease-in-out;
+}
+
+.blob1 {
+    width: 300px;
+    height: 300px;
+    background: var(--accent-blue);
+    top: -50px;
+    left: -50px;
+}
+
+.blob2 {
+    width: 250px;
+    height: 250px;
+    background: #4a00e0;
+    bottom: 50px;
+    right: -50px;
+    animation-delay: -5s;
+}
+
+.blob3 {
+    width: 200px;
+    height: 200px;
+    background: #00f2fe;
+    top: 40%;
+    left: 40%;
+    animation-delay: -10s;
+}
+
+@keyframes move {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(50px, 100px) scale(1.2); }
+}
+
+/* Screen Styles */
+.screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+    transition: opacity 0.4s ease, visibility 0.4s;
+}
+
+.glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid var(--glass-border);
+}
+
+.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.content {
+    text-align: center;
+    width: 85%;
+    max-width: 400px;
+}
+
+.app-logo {
+    width: 100px;
+    height: 100px;
+    margin-bottom: 2rem;
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+h2 {
+    font-weight: 300;
+    margin-bottom: 1.5rem;
+    letter-spacing: 1px;
+}
+
+/* PIN Dots */
+.pin-display {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+}
+
+.pin-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-light);
+    transition: all 0.2s ease;
+}
+
+.pin-dot.active {
+    background: var(--accent-light);
+    box-shadow: 0 0 10px var(--accent-light);
+}
+
+/* Numpad */
+.numpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 0 auto;
+    width: 260px;
+}
+
+.num-btn {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    color: white;
+    font-size: 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.num-btn:active {
+    background: rgba(255,255,255,0.2);
+}
+
+.num-btn.empty {
+    visibility: hidden;
+}
+
+/* Modals & Buttons */
+.btn-primary {
+    background: var(--accent-blue);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-top: 1rem;
+    cursor: pointer;
+}
+
+.btn-secondary {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border: 1px solid var(--glass-border);
+    padding: 10px 20px;
+    border-radius: 8px;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+.btn-text {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    margin-top: 1.5rem;
+    text-decoration: underline;
+}
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: #0a1020;
+    padding: 2rem;
+    border-radius: 20px;
+    width: 85%;
+    max-width: 350px;
+    border: 1px solid var(--glass-border);
+}
+
+.setting-item {
+    margin: 1.5rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+select {
+    background: #152035;
+    color: white;
+    border: 1px solid var(--glass-border);
+    padding: 8px;
+    border-radius: 4px;
+}
+
+.error-msg {
+    color: #ff4d4d;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}

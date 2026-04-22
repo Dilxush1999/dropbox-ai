@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.dropbox.ai.app" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Dropbox AI</name>
+    <description>Professional AI-powered Dropbox Wrapper with PIN security.</description>
+    <author email="dev@dropbox.page.gd" href="https://dropbox.page.gd/">Dropbox AI Team</author>
+    
+    <content src="index.html" />
+    <access origin="*" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <allow-navigation href="https://dropbox.page.gd/*" />
+
+    <preference name="ScrollEnabled" value="false" />
+    <preference name="android-minSdkVersion" value="22" />
+    <preference name="BackupWebStorage" value="none" />
+    
+    <!-- Splash Screen Settings (Cordova 11+) -->
+    <preference name="SplashScreen" value="screen" />
+    <preference name="AutoHideSplashScreen" value="true" />
+    <preference name="SplashScreenDelay" value="3000" />
+    <preference name="FadeSplashScreen" value="true" />
+    <preference name="FadeSplashScreenDuration" value="500" />
+    <preference name="AndroidWindowSplashScreenAnimatedIcon" value="www/img/logo.png" />
+    <preference name="AndroidWindowSplashScreenBackground" value="#050a14" />
+
+    <platform name="android">
+        <allow-intent href="market:*" />
+        <icon src="www/img/logo.png" />
+    </platform>
+
+    <plugin name="cordova-plugin-inappbrowser" spec="^6.0.0" />
+    <plugin name="cordova-plugin-network-information" spec="^3.0.0" />
+    <plugin name="cordova-plugin-splashscreen" spec="^6.0.0" />
+    <plugin name="cordova-plugin-statusbar" spec="^3.0.0" />
+</widget>
