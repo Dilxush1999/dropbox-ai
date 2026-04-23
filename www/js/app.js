@@ -171,28 +171,64 @@ var app = {
 
         this.iabRef.addEventListener('loadstop', function(e) {
             self.currentUrl = e.url;
-            self.injectPTR();
+            self.injectLogic();
+        });
+
+        this.iabRef.addEventListener('message', function(e) {
+            if (e.data && e.data.action === 'dashboard_back') {
+                self.backPressCount++;
+                if (self.backPressCount === 1) {
+                    // Toast inside IAB
+                    self.iabRef.executeScript({ code:
+                        'var t = document.createElement("div");' +
+                        't.innerText = "Chiqish uchun yana bir bor bosing";' +
+                        't.style.cssText = "position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:white;padding:12px 24px;border-radius:25px;z-index:2147483647;font-family:sans-serif;font-size:14px;";' +
+                        'document.body.appendChild(t);' +
+                        'setTimeout(function(){ t.style.opacity = "0"; t.style.transition = "opacity 0.3s"; setTimeout(function(){ t.remove(); }, 300); }, 2000);'
+                    });
+                    setTimeout(function() { self.backPressCount = 0; }, 2000);
+                } else if (self.backPressCount >= 2) {
+                    self.forceExit();
+                }
+            }
         });
 
         this.iabRef.addEventListener('exit', function() {
             self.iabRef = null;
-            var url = self.currentUrl || '';
-            // Dashboard yoki login da IAB yopildi = chiqish so'rash
-            if (url.indexOf('dashboard.php') !== -1 || url.indexOf('login.php') !== -1) {
-                self.pendingExit = true;
-                self.showScreen('screen-login');
-                self.showToast('Chiqish uchun yana bir bor bosing');
-                self.exitTimer = setTimeout(function() { self.pendingExit = false; }, 3000);
-            } else {
-                self.showScreen('screen-login');
-            }
+            self.showScreen('screen-login');
         });
     },
 
-    injectPTR: function() {
+    injectLogic: function() {
         if (!this.iabRef) return;
         this.iabRef.executeScript({ code:
-            '(function(){if(window._ptr)return;window._ptr=1;' +
+            '(function(){' +
+            
+            // 1. Hash Trap Logic for Dashboard/Login
+            'var url = window.location.href;' +
+            'if ((url.indexOf("dashboard.php") !== -1 || url.indexOf("login.php") !== -1) && !window._hashTrap) {' +
+            '    window._hashTrap = true;' +
+            '    if (window.location.hash !== "#trap") window.location.hash = "trap";' +
+            '    window.addEventListener("hashchange", function() {' +
+            '        if (window.location.hash !== "#trap") {' +
+            '            window.location.hash = "trap";' +
+            '            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {' +
+            '                window.webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify({action: "dashboard_back"}));' +
+            '            }' +
+            '        }' +
+            '    });' +
+            '}' +
+
+            // 2. History Reload Logic
+            'window.addEventListener("pageshow", function(e) {' +
+            '    var perf = window.performance;' +
+            '    if (e.persisted || (perf && perf.getEntriesByType("navigation").length && perf.getEntriesByType("navigation")[0].type === "back_forward")) {' +
+            '        location.reload();' +
+            '    }' +
+            '});' +
+
+            // 3. PTR Logic
+            'if(window._ptr)return;window._ptr=1;' +
             'var sY=0,d=0,r=0,th=140;' +
             'var p=document.createElement("div");' +
             'p.style.cssText="position:fixed;top:-100px;left:50%;transform:translateX(-50%);width:60px;height:60px;background:rgba(255,255,255,.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.3);border-radius:50%;z-index:2147483646;display:flex;align-items:center;justify-content:center;transition:top .2s cubic-bezier(.175,.885,.32,1.275);";' +
@@ -208,35 +244,22 @@ var app = {
 
     // === ILOVADAN CHIQISH ===
     forceExit: function() {
-        // Yangi qo'shilgan cordova-plugin-exit orqali kafolatlangan chiqish
         try { if (window.cordova && cordova.plugins && cordova.plugins.exit) cordova.plugins.exit(); } catch(e) {}
-        
-        // Standart Cordova chiqish metodlari
         try { navigator.app.exitApp(); } catch(e) {}
         try { navigator.device.exitApp(); } catch(e) {}
-        
-        // Eng so'nggi chora: browser tarixidan orqaga qaytish (Android'da ilovani yopishga olib keladi)
-        try { window.history.back(); } catch(e) {}
+        try { navigator.app.backHistory(); } catch(e) {}
     },
 
     // === BACK BUTTON (faqat Cordova ekranlarida ishlaydi, IAB o'zi boshqaradi) ===
     onBackKeyDown: function(e) {
         e.preventDefault();
 
-        // 1. Agar dashboard dan kelgan bo'lsa — darhol chiqish
-        if (this.pendingExit) {
-            clearTimeout(this.exitTimer);
-            this.pendingExit = false;
-            this.forceExit();
-            return;
-        }
-
-        // 2. Modallar
+        // Modallar
         if (!document.getElementById('modal-info').classList.contains('hidden')) { this.closeInfoModal(); return; }
         if (!document.getElementById('modal-settings').classList.contains('hidden')) { this.hideSettings(); return; }
         if (!document.getElementById('modal-verify').classList.contains('hidden')) { this.closeVerifyModal(); return; }
 
-        // 3. PIN ekranida — double back exit
+        // PIN ekranida — double back exit
         var self = this;
         this.backPressCount++;
         if (this.backPressCount === 1) {
