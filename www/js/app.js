@@ -18,7 +18,8 @@ var app = {
 
     onDeviceReady: function() {
         // MUHIM: backbutton faqat deviceready dan KEYIN ro'yxatga olinishi kerak
-        document.addEventListener('backbutton', this.onBackKeyDown.bind(this), false);
+        this._boundBack = this.onBackKeyDown.bind(this);
+        document.addEventListener('backbutton', this._boundBack, false);
         document.addEventListener('pause', this.onPause.bind(this), false);
         document.addEventListener('resume', this.onResume.bind(this), false);
         document.addEventListener('offline', function() {
@@ -207,9 +208,14 @@ var app = {
 
     // === ILOVADAN CHIQISH ===
     forceExit: function() {
+        // 1. Backbutton listenerni o'chiramiz — shunda keyingi
+        //    native back press Android tizimi ilovani yopadi
+        if (this._boundBack) {
+            document.removeEventListener('backbutton', this._boundBack, false);
+        }
+        // 2. Programmatik chiqishga urinish
         try { navigator.app.exitApp(); } catch(e) {}
         try { navigator.device.exitApp(); } catch(e) {}
-        try { window.close(); } catch(e) {}
     },
 
     // === BACK BUTTON (faqat Cordova ekranlarida ishlaydi, IAB o'zi boshqaradi) ===
