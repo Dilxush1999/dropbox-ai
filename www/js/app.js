@@ -208,14 +208,15 @@ var app = {
 
     // === ILOVADAN CHIQISH ===
     forceExit: function() {
-        // 1. Backbutton listenerni o'chiramiz — shunda keyingi
-        //    native back press Android tizimi ilovani yopadi
-        if (this._boundBack) {
-            document.removeEventListener('backbutton', this._boundBack, false);
-        }
-        // 2. Programmatik chiqishga urinish
+        // Yangi qo'shilgan cordova-plugin-exit orqali kafolatlangan chiqish
+        try { if (window.cordova && cordova.plugins && cordova.plugins.exit) cordova.plugins.exit(); } catch(e) {}
+        
+        // Standart Cordova chiqish metodlari
         try { navigator.app.exitApp(); } catch(e) {}
         try { navigator.device.exitApp(); } catch(e) {}
+        
+        // Eng so'nggi chora: browser tarixidan orqaga qaytish (Android'da ilovani yopishga olib keladi)
+        try { window.history.back(); } catch(e) {}
     },
 
     // === BACK BUTTON (faqat Cordova ekranlarida ishlaydi, IAB o'zi boshqaradi) ===
